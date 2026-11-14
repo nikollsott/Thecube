@@ -2,123 +2,275 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#0b0710">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="color-scheme" content="dark">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Experiencia AR</title>
   <link rel="icon" href="assets/logo.png">
+  <link rel="apple-touch-icon" href="assets/logo.png">
   <style>
     :root {
       --brand: #DA2950;
-      --bg: #0b0710;
+      --bg: #000000;
       --text: #ffffff;
-      --muted: rgba(255, 255, 255, 0.72);
+      --muted: #9b9ba6;
+      --tint: #FF4F74;
+      /* Colores del modo oscuro de iOS */
+      --sys-bg: #000000;
+      --sys-grouped: #1c1c1e;
+      --label: #ffffff;
+      --label-2: rgba(235, 235, 245, 0.6);
+      --separator: rgba(84, 84, 88, 0.65);
+      --sans: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
+      --display: var(--sans);
+      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      /* Curva tipo resorte de Apple (con respaldo si el navegador no soporta linear()) */
+      --spring-fallback: cubic-bezier(0.2, 0.9, 0.25, 1);
+      --spring: linear(0, 0.082 5%, 0.243 10%, 0.413 15%, 0.562 20%, 0.682 25%, 0.773 30%, 0.841 35%,
+                0.89 40%, 0.949 50%, 0.977 60%, 0.99 70%, 0.995 80%, 1);
+      --spring-dur: 0.6s;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; color-scheme: dark; background: var(--bg); color: var(--text); overflow: hidden;
+      font-family: var(--sans); -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
+    button { font: inherit; color: inherit; }
 
     #ar { position: fixed; inset: 0; overflow: hidden; }
-    body.demo { background: radial-gradient(120% 80% at 50% 100%, #3a0f22 0%, #140a1c 45%, #07050a 100%); }
+    body.demo { background: radial-gradient(120% 80% at 50% 100%, #2a0c19 0%, #110a16 45%, #070609 100%); }
 
-    .layer { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
-      justify-content: center; text-align: center; padding: 24px 16px; z-index: 10; }
+    .layer { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; }
+    .center { align-items: center; justify-content: center; text-align: center; padding: 24px 16px; }
     .hidden { display: none !important; }
 
-    /* Pantalla de inicio */
-    #start { background: radial-gradient(120% 80% at 50% 0%, #3a0f22 0%, #140a1c 50%, #07050a 100%); gap: 22px; }
-    #start .logo { width: min(44vw, 180px); filter: drop-shadow(0 0 24px rgba(218, 41, 80, 0.6)); animation: pulse 1s ease-in-out infinite alternate; }
-    #start h1 { font-size: clamp(24px, 7vw, 34px); line-height: 1.1; letter-spacing: -0.01em; }
-    #start p { color: var(--muted); font-size: 16px; max-width: 320px; line-height: 1.45; }
-    .steps { list-style: none; display: grid; gap: 8px; color: var(--muted); font-size: 15px; text-align: left; }
-    .steps b { color: var(--text); display: inline-block; width: 22px; height: 22px; border-radius: 50%;
-      background: var(--brand); text-align: center; line-height: 22px; font-size: 13px; margin-right: 8px; }
-    .btn { appearance: none; border: 0; border-radius: 999px; background: var(--brand); color: #fff;
-      font: 600 18px/1 inherit; padding: 18px 34px; min-width: 240px; cursor: pointer;
-      box-shadow: 0 8px 30px rgba(218, 41, 80, 0.45); }
-    .btn:active { transform: scale(0.97); }
-    .link { background: none; border: 0; color: var(--muted); font: 14px inherit; text-decoration: underline; cursor: pointer; padding: 8px; }
+    /* Visor con esquinas */
+    .vf { position: relative; aspect-ratio: 1; display: grid; place-items: center; }
+    .vf i { position: absolute; width: 24px; height: 24px; border: 0 solid rgba(255, 255, 255, 0.55); }
+    .vf i:nth-child(1) { top: 0; left: 0; border-top-width: 2px; border-left-width: 2px; border-top-left-radius: 8px; }
+    .vf i:nth-child(2) { top: 0; right: 0; border-top-width: 2px; border-right-width: 2px; border-top-right-radius: 8px; }
+    .vf i:nth-child(3) { bottom: 0; left: 0; border-bottom-width: 2px; border-left-width: 2px; border-bottom-left-radius: 8px; }
+    .vf i:nth-child(4) { bottom: 0; right: 0; border-bottom-width: 2px; border-right-width: 2px; border-bottom-right-radius: 8px; }
+    .vf img { width: 74%; }
 
-    /* Cargando */
-    #loading { background: rgba(7, 5, 10, 0.85); gap: 16px; }
-    .spinner { width: 46px; height: 46px; border-radius: 50%; border: 4px solid rgba(255,255,255,0.15);
-      border-top-color: var(--brand); animation: spin 0.9s linear infinite; }
+    /* ---------- Inicio ---------- */
+    #start { overflow-y: auto; -webkit-overflow-scrolling: touch;
+      background:
+        radial-gradient(55% 32% at 50% 14%, rgba(218, 41, 80, 0.20), transparent 70%),
+        radial-gradient(80% 26% at 50% 100%, rgba(218, 41, 80, 0.22), transparent 72%),
+        var(--sys-bg);
+      padding: calc(1rem + env(safe-area-inset-top)) calc(1.25rem + env(safe-area-inset-right))
+               calc(1rem + env(safe-area-inset-bottom)) calc(1.25rem + env(safe-area-inset-left)); }
+    #start > * { width: 100%; max-width: 26rem; margin-left: auto; margin-right: auto; }
 
-    /* Guía para apuntar */
-    #hint { pointer-events: none; background: transparent; gap: 18px; }
-    #hint .frame { width: min(64vw, 280px); aspect-ratio: 1; border-radius: 28px; position: relative;
-      display: grid; place-items: center; }
-    #hint .frame::before { content: ""; position: absolute; inset: 0; border-radius: inherit;
-      border: 3px solid rgba(255, 255, 255, 0.9); animation: breathe 1.6s ease-in-out infinite; }
-    #hint .frame img { width: 70%; opacity: 0.35; }
-    #hint .scanline { position: absolute; left: 8%; right: 8%; height: 3px; border-radius: 3px;
-      background: linear-gradient(90deg, transparent, var(--brand), transparent); animation: scan 2s ease-in-out infinite; }
-    #hint .msg { background: rgba(0, 0, 0, 0.55); padding: 10px 18px; border-radius: 999px; font-size: 16px;
-      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+    .hero { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 1.75rem; padding: 1.5rem 0; text-align: center; }
+    .hero .logo { width: min(36vw, 8.5rem); filter: drop-shadow(0 0 1.75rem rgba(218, 41, 80, 0.5)); }
+    .hero h1 { font: 700 2.125rem/1.06 var(--display); letter-spacing: -0.02em; font-optical-sizing: auto;
+      text-wrap: balance; color: var(--label); }
 
-    /* Error */
-    #error { background: var(--bg); gap: 18px; }
-    #error p { color: var(--muted); max-width: 320px; line-height: 1.45; }
+    /* Lista agrupada estilo iOS */
+    .steps { list-style: none; width: 100%; text-align: left; border-radius: 1.625rem; overflow: hidden;
+      background: var(--sys-grouped); }
+    .steps li { position: relative; display: flex; align-items: center; gap: 0.875rem; min-height: 2.75rem;
+      padding: 0.625rem 1rem; font-size: 1.0625rem; line-height: 1.3; color: var(--label); }
+    .steps li + li::before { content: ""; position: absolute; top: 0; right: 0; left: 3.75rem;
+      height: 0.5px; background: var(--separator); }
+    .steps .ico { flex: none; width: 1.875rem; height: 1.875rem; border-radius: 0.5rem; display: grid; place-items: center;
+      color: #fff; background: linear-gradient(180deg, #F0476C, #D3214A);
+      box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.12); }
+    .steps .ico svg { width: 1.125rem; height: 1.125rem; }
 
-    #debug { position: fixed; top: 10px; left: 10px; z-index: 20; background: rgba(0,0,0,0.6);
-      font: 12px/1.2 ui-monospace, monospace; padding: 6px 8px; border-radius: 6px; }
+    .actions { display: grid; gap: 0.75rem; padding-top: 0.5rem; }
+
+    /* ---------- Vidrio (Liquid Glass) ---------- */
+    .glass { position: relative; isolation: isolate;
+      background: var(--glass-tint, rgba(255, 255, 255, 0.08));
+      backdrop-filter: blur(var(--glass-blur, 18px)) saturate(200%) brightness(var(--glass-dim, 1));
+      -webkit-backdrop-filter: blur(var(--glass-blur, 18px)) saturate(200%) brightness(var(--glass-dim, 1));
+      box-shadow:
+        inset 0 0 0.75rem rgba(255, 255, 255, 0.06),
+        inset 0 -0.5rem 1rem -0.5rem rgba(0, 0, 0, 0.25),
+        0 0.5rem 1.5rem rgba(0, 0, 0, 0.4); }
+    /* Borde con reflejo en diagonal */
+    .glass::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit;
+      padding: 1px; pointer-events: none;
+      background: linear-gradient(var(--rim-angle, 115deg),
+        rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.18) 18%, rgba(255, 255, 255, 0) 38%,
+        rgba(255, 255, 255, 0) 62%, rgba(255, 255, 255, 0.14) 82%, rgba(255, 255, 255, 0.45) 100%);
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude; }
+
+    /* ---------- Botones ---------- */
+    .btn { appearance: none; border: 0; border-radius: 999px; color: #fff; overflow: hidden;
+      min-height: 3.25rem; width: 100%; padding: 0 1.5rem; font-size: 1.0625rem; font-weight: 600; letter-spacing: 0;
+      cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+      transition: transform var(--spring-dur) var(--spring-fallback); }
+    .btn svg { width: 1.25rem; height: 1.25rem; flex: none; }
+    /* Brillo que nace donde se toca */
+    .btn::after { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+      background: radial-gradient(9rem circle at var(--x, 50%) var(--y, 50%), rgba(255, 255, 255, 0.28), transparent 65%);
+      opacity: 0; transition: opacity 0.45s ease-out; }
+    .btn.prominent { --glass-tint: rgba(218, 41, 80, 0.78);
+      box-shadow:
+        inset 0 0 0.875rem rgba(255, 255, 255, 0.16),
+        inset 0 -0.5rem 1rem -0.5rem rgba(90, 0, 25, 0.35),
+        0 0.5rem 1.75rem rgba(218, 41, 80, 0.35); }
+    .btn:active { transform: scale(0.97); transition-duration: 0.1s; transition-timing-function: ease-out; }
+    .btn:active::after { opacity: 1; transition-duration: 0s; }
+    .btn.inline { width: auto; }
+    .btn:focus-visible { outline: 2px solid var(--tint); outline-offset: 3px; }
+
+    /* ---------- Entrada en cascada ---------- */
+    /* "backwards" (no "both"): al terminar no deja transform, que rompería el desenfoque del vidrio */
+    #start .rise { animation: rise var(--spring-dur) var(--spring-fallback) backwards; }
+    #start .glass.rise { animation-name: glass-in; }
+    #start .hero .rise:nth-child(2) { animation-delay: 0.06s; }
+    #start .hero .rise:nth-child(3) { animation-delay: 0.12s; }
+    #start .actions .rise:nth-child(1) { animation-delay: 0.18s; }
+    #start .actions .rise:nth-child(2) { animation-delay: 0.23s; }
+    #start .actions .rise:nth-child(3) { animation-delay: 0.28s; }
+    @supports (transition-timing-function: linear(0, 1)) {
+      .btn { transition-timing-function: var(--spring); }
+      #start .rise { animation-timing-function: var(--spring); }
+    }
+
+    .privacy { color: var(--label-2); font-size: 0.8125rem; line-height: 1.4; letter-spacing: 0.01em;
+      text-align: center; text-wrap: balance; padding-top: 0.25rem; }
+
+    /* ---------- Cargando ---------- */
+    #loading { background: rgba(10, 10, 12, 0.94); gap: 14px; }
+    .spinner { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.12);
+      border-top-color: var(--text); animation: spin 0.8s linear infinite; }
+    #loading p { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+    /* ---------- Guía para apuntar ---------- */
+    #hint { pointer-events: none; background: transparent; gap: 20px; }
+    #hint .vf { width: min(66vw, 280px); animation: lock-in var(--spring-dur) var(--spring-fallback) backwards; }
+    #hint .vf i { border-color: #fff; width: 34px; height: 34px; border-width: 0; }
+    #hint .vf i:nth-child(1) { border-top-width: 3px; border-left-width: 3px; }
+    #hint .vf i:nth-child(2) { border-top-width: 3px; border-right-width: 3px; }
+    #hint .vf i:nth-child(3) { border-bottom-width: 3px; border-left-width: 3px; }
+    #hint .vf i:nth-child(4) { border-bottom-width: 3px; border-right-width: 3px; }
+    #hint .vf img { opacity: 0.22; }
+    #hint .msg { padding: 0.625rem 1.125rem; font-size: 0.9375rem; font-weight: 600; letter-spacing: 0.005em;
+      animation: glass-in var(--spring-dur) var(--spring-fallback) 0.08s backwards; }
+    @supports (transition-timing-function: linear(0, 1)) {
+      #hint .vf, #hint .msg { animation-timing-function: var(--spring); }
+    }
+
+    /* Avisos sobre la cámara: vidrio que oscurece el fondo para que el texto se lea siempre */
+    #hint .msg, #demo-badge { --glass-tint: rgba(24, 24, 28, 0.36); --glass-dim: 0.62; --glass-blur: 14px;
+      border-radius: 999px; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); }
+
+    /* ---------- Error ---------- */
+    #error { background: var(--bg); gap: 12px; }
+    #error h2 { font: 700 22px/1.2 var(--display); letter-spacing: -0.01em; }
+    #error p { color: var(--muted); max-width: 32ch; line-height: 1.5; font-size: 15px; margin-bottom: 12px; }
+
+    #debug { position: fixed; top: calc(10px + env(safe-area-inset-top)); left: 10px; z-index: 20; background: rgba(0,0,0,0.6);
+      font: 12px/1.2 var(--mono); padding: 6px 8px; border-radius: 6px; }
     #demo-badge { display: none; position: fixed; bottom: calc(16px + env(safe-area-inset-bottom)); left: 50%;
-      transform: translateX(-50%); z-index: 10; background: rgba(0,0,0,0.5); padding: 8px 14px; border-radius: 999px;
-      font-size: 13px; color: var(--muted); width: max-content; max-width: calc(100% - 32px); text-align: center; }
+      transform: translateX(-50%); z-index: 10;
+      padding: 0.5rem 0.875rem; font-size: 0.8125rem; font-weight: 500; letter-spacing: 0.01em;
+      width: max-content; max-width: calc(100% - 32px); text-align: center; }
     body.demo #demo-badge { display: block; }
 
+    @keyframes rise { from { opacity: 0; transform: translateY(0.75rem) scale(0.98); } }
+    @keyframes glass-in { from { opacity: 0; transform: scale(0.94); } }
+    @keyframes lock-in { from { opacity: 0; transform: scale(1.08); } }
+    @keyframes fade { from { opacity: 0; } }
     @keyframes spin { to { transform: rotate(360deg); } }
-    @keyframes pulse { from { transform: scale(0.97); } to { transform: scale(1.03); } }
-    @keyframes breathe { 0%, 100% { transform: scale(1); opacity: 0.6; } 50% { transform: scale(1.03); opacity: 1; } }
-    @keyframes scan { 0%, 100% { top: 12%; } 50% { top: 86%; } }
-    @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+
+    /* ---------- Accesibilidad ---------- */
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; }
+      #start .rise { animation: fade 0.3s ease backwards !important; }
+      .btn, .btn:active { transform: none; }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      .glass { --glass-tint: #2c2c2e; backdrop-filter: none; -webkit-backdrop-filter: none; }
+      .btn.prominent { --glass-tint: var(--brand); }
+      #hint .msg, #demo-badge { --glass-tint: rgba(28, 28, 30, 0.92); }
+    }
+    @media (prefers-contrast: more) {
+      .glass { --glass-tint: #2c2c2e; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.75); }
+      .glass::before { display: none; }
+      .btn.prominent { --glass-tint: #b81d40; }
+      .steps { border: 1px solid rgba(255, 255, 255, 0.5); }
+      .steps li + li::before { background: rgba(255, 255, 255, 0.5); }
+      #hint .msg, #demo-badge { text-shadow: none; }
+    }
   </style>
+  <!-- Librerías locales (vendor/): three.js 0.160.0 y MindAR 1.2.5 -->
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
-      "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
+      "three": "./vendor/three/three.module.js",
+      "three/addons/": "./vendor/three/addons/",
+      "mindar-image-three": "./vendor/mindar/mindar-image-three.prod.js"
     }
   }
   </script>
 </head>
-<body>
+<body ontouchstart=""><!-- activa :active en iPhone -->
   <div id="ar"></div>
 
   <section id="start" class="layer">
-    <img class="logo" src="assets/logo.png" alt="Logo">
-    <h1>Haz que el logo<br>cobre vida</h1>
-    <ol class="steps">
-      <li><b>1</b>Toca el botón y permite la cámara</li>
-      <li><b>2</b>Apunta al logo</li>
-      <li><b>3</b>Mueve el celular y mira la magia</li>
-    </ol>
-    <button id="start-btn" class="btn">Activar cámara</button>
-    <button id="demo-btn" class="link">Ver demo sin cámara</button>
+    <main class="hero">
+      <img class="logo rise" src="assets/logo.png" alt="Logo">
+      <h1 class="rise">Haz que el logo<br>cobre vida</h1>
+      <ol class="steps rise">
+        <li><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M9.2 4h5.6c.5 0 .9.2 1.2.6L17.3 6H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2.7L8 4.6c.3-.4.7-.6 1.2-.6zM12 8.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9zm0 2a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5z"/></svg></span>Toca el botón y permite la cámara</li>
+        <li><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M4 9V6.5A2.5 2.5 0 0 1 6.5 4H9M15 4h2.5A2.5 2.5 0 0 1 20 6.5V9M20 15v2.5a2.5 2.5 0 0 1-2.5 2.5H15M9 20H6.5A2.5 2.5 0 0 1 4 17.5V15"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/></svg></span>Apunta al logo</li>
+        <li><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M10 2.5l1.9 5.1 5.1 1.9-5.1 1.9L10 16.5l-1.9-5.1L3 9.5l5.1-1.9L10 2.5zm8 11l.95 2.55L21.5 17l-2.55.95L18 20.5l-.95-2.55L14.5 17l2.55-.95L18 13.5z"/></svg></span>Mueve el celular y mira la magia</li>
+      </ol>
+    </main>
+
+    <footer class="actions">
+      <button id="start-btn" class="btn glass prominent rise">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M9.2 4h5.6c.5 0 .9.2 1.2.6L17.3 6H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2.7L8 4.6c.3-.4.7-.6 1.2-.6zM12 8.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9zm0 2a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5z"/></svg>
+        Activar cámara
+      </button>
+      <button id="demo-btn" class="btn glass rise">Ver demo sin cámara</button>
+      <p class="privacy rise">La cámara se procesa solo en tu celular. No grabamos ni enviamos imágenes.</p>
+    </footer>
   </section>
 
-  <section id="loading" class="layer hidden">
+  <section id="loading" class="layer center hidden">
     <div class="spinner"></div>
-    <p>Preparando la experiencia…</p>
+    <p id="loading-msg">Preparando la experiencia…</p>
+    <button id="loading-retry" class="btn glass inline hidden" onclick="location.reload()">Reintentar</button>
   </section>
 
-  <section id="hint" class="layer hidden">
-    <div class="frame">
-      <img src="assets/logo.png" alt="">
-      <div class="scanline"></div>
-    </div>
-    <div class="msg">Apunta la cámara al logo</div>
+  <section id="hint" class="layer center hidden">
+    <div class="vf"><i></i><i></i><i></i><i></i><img src="assets/logo.png" alt=""></div>
+    <div class="msg glass">Apunta la cámara al logo</div>
   </section>
 
-  <section id="error" class="layer hidden">
-    <h2>Ups…</h2>
+  <section id="error" class="layer center hidden">
+    <h2>No pudimos iniciar la experiencia</h2>
     <p id="error-msg"></p>
-    <button class="btn" onclick="location.reload()">Intentar de nuevo</button>
+    <button class="btn glass inline" onclick="location.reload()">Intentar de nuevo</button>
   </section>
 
   <div id="debug" class="hidden"></div>
-  <div id="demo-badge">Modo demo · mueve el dedo o inclina el celular · toca para ráfaga</div>
+  <div id="demo-badge" class="glass">Modo demo · mueve el dedo o inclina el celular · toca para ráfaga</div>
 
-  <script type="module" src="js/app.js"></script>
+  <script>
+    // El brillo del botón sigue al dedo mientras se presiona.
+    (() => {
+      const glow = (e) => {
+        const btn = e.target.closest?.('.btn');
+        if (!btn || (e.type === 'pointermove' && !e.buttons)) return;
+        const r = btn.getBoundingClientRect();
+        btn.style.setProperty('--x', (e.clientX - r.left) + 'px');
+        btn.style.setProperty('--y', (e.clientY - r.top) + 'px');
+      };
+      document.addEventListener('pointerdown', glow, { passive: true });
+      document.addEventListener('pointermove', glow, { passive: true });
+    })();
+  </script>
+  <script type="module" src="js/app.js?v=16"></script>
 </body>
 </html>

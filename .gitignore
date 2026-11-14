@@ -1,3 +1,4 @@
 .claude/
-qr-prueba.png
+qr-*.png
 assets/logo-original.jpg
+.tmp/

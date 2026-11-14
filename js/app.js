@@ -1,31 +1,46 @@
 import * as THREE from 'three';
-import { createEffects, loadCustomTextures } from './effects.js';
+import { createEffects } from './effects.js?v=16'; // ?v= evita que el celular use una versión vieja
 
-// ---------------- Configuración ----------------
+// ---------- Configuración ----------
 const TARGET_SRC = './targets/targets.mind';
-// Posición del logo dentro de la imagen del marcador (1580x1600 px).
-// El logo ocupa aprox. de x=205 a 1305 y de y=268 a 1368 px.
-const IMG_W = 1580, IMG_H = 1600;
+
+// Ubicación del logo dentro de la imagen del marcador (en píxeles).
+const IMG_W = 1580;
+const IMG_H = 1600;
 const LOGO = {
   cx: (205 + 1305) / 2 / IMG_W - 0.5,
   cy: -((268 + 1368) / 2 - IMG_H / 2) / IMG_W,
   size: (1305 - 205) / IMG_W,
-  planeH: IMG_H / IMG_W,   // alto de la imagen del marcador en unidades
+  planeH: IMG_H / IMG_W,
 };
-const HOLD_MS = 1600;   // cuánto se mantiene el contenido si se pierde el logo
-const SMOOTH = 14;      // suavizado extra de la posición (más alto = más rápido)
+
+const HOLD_MS = 250;             // tolera parpadeos del seguimiento
+const REINTRO_MS = 1500;         // si se perdió más tiempo, se repite la entrada
+const FADE_IN = 10;
+const FADE_OUT = 12;
+const SMOOTH = 14;               // suavizado del movimiento
+const FIT_FILL = 0.92;           // parte de la pantalla que puede ocupar la escena
+const FIT_MAX = 3.5;             // agrandamiento máximo al escanear de lejos
+const TABLE_TILT = 0.4;          // inclinación desde la que se considera "mesa"
+const MODE_SAMPLES = 15;
+const SLOW_START_MS = 12000;
 
 const params = new URLSearchParams(location.search);
 const DEMO = params.has('demo');
 const DEBUG = params.has('debug');
+const FORCED_MODE = ['mesa', 'pared'].includes(params.get('modo')) ? params.get('modo') : null;
 
+// ---------- Interfaz ----------
 const $ = (id) => document.getElementById(id);
 const ui = {
   start: $('start'), startBtn: $('start-btn'), demoBtn: $('demo-btn'),
-  loading: $('loading'), hint: $('hint'), error: $('error'), errorMsg: $('error-msg'),
+  loading: $('loading'), loadingMsg: $('loading-msg'), loadingRetry: $('loading-retry'),
+  hint: $('hint'), error: $('error'), errorMsg: $('error-msg'),
   debug: $('debug'), container: $('ar'),
 };
 const show = (el, on = true) => el.classList.toggle('hidden', !on);
+const setLoadingMsg = (text) => { ui.loadingMsg.textContent = text; };
+const showProgress = (p) => setLoadingMsg(`Cargando escena… ${Math.round(p * 100)}%`);
 
 if (DEMO) {
   show(ui.start, false);
@@ -35,7 +50,10 @@ if (DEMO) {
 }
 ui.demoBtn.addEventListener('click', () => { location.search = '?demo'; });
 
-// ---------------- Modo AR (cámara + MindAR) ----------------
+// Al volver "atrás" desde la caché la cámara ya no existe: recargar.
+window.addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
+
+// ---------- Modo AR ----------
 async function startAR() {
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
     return fail('La cámara solo funciona si la página se abre con https://. Revisa el enlace.');
@@ -43,158 +61,296 @@ async function startAR() {
   show(ui.start, false);
   show(ui.loading, true);
 
-  let mindar;
-  try {
-    const { MindARThree } = await import('mindar-image-three');
-    mindar = new MindARThree({
-      container: ui.container,
-      imageTargetSrc: TARGET_SRC,
-      uiLoading: 'no', uiScanning: 'no', uiError: 'no',
-      filterMinCF: 0.001, filterBeta: 30,   // menos temblor
-      warmupTolerance: 2, missTolerance: 8,  // aparece rápido, no se suelta tan fácil
-    });
-  } catch (e) {
-    console.error(e);
-    return fail('No se pudo cargar el motor de realidad aumentada. Revisa tu conexión.');
-  }
+  const mindar = await loadMindAR();
+  if (!mindar) return fail('No se pudo cargar el motor de realidad aumentada. Revisa tu conexión.');
 
   const { renderer, scene, camera } = mindar;
   setupRenderer(renderer);
   const anchor = mindar.addAnchor(0);
 
-  // El contenido NO va dentro del anchor: lo movemos nosotros para suavizar
-  // y para que no desaparezca de golpe cuando el logo se pierde un instante.
+  // La escena sigue al logo con suavizado (no va dentro del anchor).
   const content = new THREE.Group();
   scene.add(content);
-  const custom = await loadCustomTextures();
-  const fx = createEffects({ renderer, logo: LOGO, custom });
+  const fx = createEffects({ logo: LOGO, onProgress: showProgress });
   content.add(fx.group);
 
-  let tracked = false, everSeen = false, snap = true, lastSeen = -1e9, fade = 0;
+  const state = {
+    tracked: false, everSeen: false, snap: true, lastSeen: -Infinity,
+    fade: 0, fit: 1, mode: FORCED_MODE || 'pared', modeSamples: 0, modeSum: 0,
+  };
 
   anchor.onTargetFound = () => {
-    const now = performance.now();
-    if (!everSeen || now - lastSeen > HOLD_MS) { snap = true; fx.burst(); vibrate(); }
-    tracked = true; everSeen = true;
+    if (!state.everSeen || performance.now() - state.lastSeen > REINTRO_MS) {
+      Object.assign(state, { snap: true, modeSamples: 0, modeSum: 0 });
+      fx.burst();
+      vibrate();
+    }
+    state.tracked = state.everSeen = true;
   };
-  anchor.onTargetLost = () => { tracked = false; lastSeen = performance.now(); };
+  anchor.onTargetLost = () => {
+    state.tracked = false;
+    state.lastSeen = performance.now();
+  };
 
+  const slowTimer = setTimeout(() => explainSlowStart(mindar), SLOW_START_MS);
   try {
     await mindar.start();
   } catch (e) {
-    console.error(e);
+    console.warn('Cámara no disponible', e);
+    clearTimeout(slowTimer);
+    mindar.video = null; // evita un error interno de MindAR al girar la pantalla
     return fail('No pudimos acceder a la cámara. Da permiso a la cámara en tu navegador y vuelve a intentarlo.');
   }
+
+  await fx.ready; // nunca mostrar la escena a medio cargar
+  clearTimeout(slowTimer);
+  show(ui.loadingRetry, false);
   show(ui.loading, false);
   show(ui.hint, true);
+  resumeCameraOnReturn(mindar);
 
-  const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
-  let prev = performance.now(), frames = 0, fpsT = prev, fps = 0;
+  const pose = { p: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3() };
+  const fps = createFpsMeter();
+  let prev = performance.now();
 
   renderer.setAnimationLoop(() => {
     const now = performance.now();
     const dt = Math.min(0.05, (now - prev) / 1000);
     prev = now;
 
-    if (tracked) {
-      anchor.group.matrix.decompose(p, q, s);
-      if (snap) {
-        content.position.copy(p); content.quaternion.copy(q); content.scale.copy(s);
-        snap = false;
-      } else {
-        const k = 1 - Math.exp(-SMOOTH * dt);
-        content.position.lerp(p, k); content.quaternion.slerp(q, k); content.scale.lerp(s, k);
-      }
-      lastSeen = now;
+    if (state.tracked) {
+      followAnchor(content, anchor, pose, state, dt);
+      state.lastSeen = now;
+      detectMode(anchor, state, fx);
+      state.fit = fitToScreen(content, camera, fx, state.fit, dt);
+      fx.setFit(state.fit);
     }
-    const holding = everSeen && now - lastSeen < HOLD_MS;
-    const target = tracked || holding ? 1 : 0;
-    fade += (target - fade) * Math.min(1, dt * (target > fade ? 10 : 3));
 
-    fx.setFade(fade);
+    const holding = state.everSeen && now - state.lastSeen < HOLD_MS;
+    const target = state.tracked || holding ? 1 : 0;
+    state.fade += (target - state.fade) * Math.min(1, dt * (target > state.fade ? FADE_IN : FADE_OUT));
+
+    fx.setFade(state.fade);
     fx.update(now / 1000, dt);
-    show(ui.hint, !tracked && fade < 0.05);
+    show(ui.hint, !state.tracked && state.fade < 0.05);
     renderer.render(scene, camera);
 
     if (DEBUG) {
-      frames++;
-      if (now - fpsT > 500) { fps = Math.round(frames * 1000 / (now - fpsT)); frames = 0; fpsT = now; }
-      ui.debug.textContent = `${tracked ? 'DETECTADO' : holding ? 'memoria' : 'buscando'} · ${fps} fps`;
+      const status = state.tracked ? 'DETECTADO' : holding ? 'memoria' : 'buscando';
+      ui.debug.textContent = `${status} · modo ${state.mode} · x${state.fit.toFixed(1)} · ${fps(now)} fps`;
     }
   });
   if (DEBUG) show(ui.debug, true);
 }
 
-// ---------------- Modo demo (sin cámara) ----------------
-// Muestra el logo con los efectos y mueve la cámara virtual con el dedo,
-// el mouse o la inclinación del celular, para enseñar el paralaje.
+async function loadMindAR() {
+  try {
+    const { MindARThree } = await import('mindar-image-three');
+    return new MindARThree({
+      container: ui.container,
+      imageTargetSrc: TARGET_SRC,
+      uiLoading: 'no', uiScanning: 'no', uiError: 'no',
+      filterMinCF: 0.001, filterBeta: 30,     // menos temblor
+      warmupTolerance: 2, missTolerance: 3,   // aparece y desaparece rápido
+    });
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+}
+
+function explainSlowStart(mindar) {
+  setLoadingMsg(mindar.video?.srcObject
+    ? 'La conexión está lenta, seguimos cargando…'
+    : 'Esperando el permiso de la cámara. Si no ves el aviso, revisa los permisos de cámara de tu navegador.');
+  show(ui.loadingRetry, true);
+}
+
+// Al volver de otra app: reanuda el video o avisa si la cámara se cerró.
+function resumeCameraOnReturn(mindar) {
+  document.addEventListener('visibilitychange', () => {
+    const video = mindar.video;
+    if (document.hidden || !video) return;
+
+    const tracks = video.srcObject?.getVideoTracks?.() || [];
+    if (tracks.length && tracks.every((t) => t.readyState === 'ended')) {
+      mindar.renderer.setAnimationLoop(null);
+      fail('La cámara se detuvo al salir de la página. Toca "Intentar de nuevo" para reactivarla.');
+      return;
+    }
+    if (video.paused) video.play().catch(() => {});
+  });
+}
+
+function followAnchor(content, anchor, pose, state, dt) {
+  anchor.group.matrix.decompose(pose.p, pose.q, pose.s);
+  if (state.snap) {
+    content.position.copy(pose.p);
+    content.quaternion.copy(pose.q);
+    content.scale.copy(pose.s);
+    state.snap = false;
+    return;
+  }
+  const k = 1 - Math.exp(-SMOOTH * dt);
+  content.position.lerp(pose.p, k);
+  content.quaternion.slerp(pose.q, k);
+  content.scale.lerp(pose.s, k);
+}
+
+// Mesa o pared: según cuánto se aleja de la cámara el "arriba" del logo.
+function detectMode(anchor, state, fx) {
+  if (FORCED_MODE || state.modeSamples >= MODE_SAMPLES) return;
+
+  const e = anchor.group.matrix.elements;
+  state.modeSum += -e[6] / Math.hypot(e[4], e[5], e[6]);
+  state.modeSamples++;
+
+  if (state.modeSamples === 1 || state.modeSamples === MODE_SAMPLES) {
+    state.mode = state.modeSum / state.modeSamples > TABLE_TILT ? 'mesa' : 'pared';
+    fx.setMode(state.mode, state.modeSamples === 1);
+  }
+}
+
+// Si el logo se ve pequeño (lejos), agranda la escena hasta llenar la pantalla.
+function fitToScreen(content, camera, fx, current, dt) {
+  const visH = 2 * content.position.length() * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+  const visW = visH * camera.aspect;
+  const unit = content.scale.x; // ancho del marcador
+  const target = Math.min(
+    FIT_FILL * (visW / 2) / (fx.extent.side * unit),
+    FIT_FILL * (visH / 2) / (fx.extent.up * unit),
+  );
+  return current + (THREE.MathUtils.clamp(target, 1, FIT_MAX) - current) * Math.min(1, dt * 3);
+}
+
+function createFpsMeter() {
+  let frames = 0, since = performance.now(), fps = 0;
+  return (now) => {
+    frames++;
+    if (now - since > 500) {
+      fps = Math.round(frames * 1000 / (now - since));
+      frames = 0;
+      since = now;
+    }
+    return fps;
+  };
+}
+
+// ---------- Modo demo (sin cámara) ----------
 async function startDemo() {
   document.body.classList.add('demo');
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   setupRenderer(renderer);
   ui.container.appendChild(renderer.domElement);
+
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 50);
+  const mode = FORCED_MODE || 'mesa';
+  scene.add(createPrintedLogo(mode === 'mesa'));
 
-  const logoTex = new THREE.TextureLoader().load('./assets/logo.png');
-  logoTex.colorSpace = THREE.SRGBColorSpace;
-  const card = new THREE.Mesh(
-    new THREE.PlaneGeometry(1, IMG_H / IMG_W),
-    new THREE.MeshBasicMaterial({ map: logoTex, transparent: true })
-  );
-  scene.add(card);
-
-  const custom = await loadCustomTextures();
-  const fx = createEffects({ renderer, logo: LOGO, custom });
+  show(ui.loading, true);
+  const fx = createEffects({ logo: LOGO, onProgress: showProgress });
+  fx.setMode(mode, true);
   scene.add(fx.group);
+  await fx.ready;
+  show(ui.loading, false);
   fx.setFade(1);
   fx.burst();
 
-  const resize = () => {
-    const w = window.innerWidth, h = window.innerHeight;
-    renderer.setSize(w, h);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-  };
-  window.addEventListener('resize', resize);
-  resize();
-
-  const look = { x: 0, y: 0, tx: 0, ty: 0, user: false };
-  window.addEventListener('pointermove', (e) => {
-    look.user = true;
-    look.tx = (e.clientX / window.innerWidth) * 2 - 1;
-    look.ty = (e.clientY / window.innerHeight) * 2 - 1;
-  });
-  window.addEventListener('deviceorientation', (e) => {
-    if (e.gamma == null) return;
-    look.user = true;
-    look.tx = Math.max(-1, Math.min(1, e.gamma / 30));
-    look.ty = Math.max(-1, Math.min(1, (e.beta - 45) / 30));
-  });
-  renderer.domElement.addEventListener('click', () => fx.burst());
-
+  fitRendererToWindow(renderer, camera);
+  const viewer = trackViewer(renderer, fx);
   let prev = performance.now();
+
   renderer.setAnimationLoop(() => {
     const now = performance.now();
     const dt = Math.min(0.05, (now - prev) / 1000);
     prev = now;
     const t = now / 1000;
-    if (!look.user) { look.tx = Math.sin(t * 0.5); look.ty = Math.sin(t * 0.37) * 0.5; }
-    look.x += (look.tx - look.x) * Math.min(1, dt * 4);
-    look.y += (look.ty - look.y) * Math.min(1, dt * 4);
 
-    const dist = camera.aspect < 1 ? 2.2 / camera.aspect : 3.0;
-    camera.position.set(look.x * 1.1, -look.y * 0.7, dist);
-    camera.lookAt(0, 0, 0.15);
-
+    viewer.update(t, dt);
+    placeDemoCamera(camera, viewer, mode);
     fx.update(t, dt);
     renderer.render(scene, camera);
   });
 }
 
-// ---------------- Utilidades ----------------
+function createPrintedLogo(withPaper) {
+  const group = new THREE.Group();
+  const geo = new THREE.PlaneGeometry(1, IMG_H / IMG_W);
+  if (withPaper) {
+    const paper = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: '#efeaf2' }));
+    paper.position.z = -0.002;
+    group.add(paper);
+  }
+  const map = new THREE.TextureLoader().load('./assets/logo.png');
+  map.colorSpace = THREE.SRGBColorSpace;
+  group.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map, transparent: true })));
+  return group;
+}
+
+function fitRendererToWindow(renderer, camera) {
+  const resize = () => {
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+  };
+  window.addEventListener('resize', resize);
+  resize();
+}
+
+// Punto de vista del demo: dedo, mouse o inclinación; sin interacción, se mueve solo.
+function trackViewer(renderer, fx) {
+  const view = { x: 0, y: 0, tx: 0, ty: 0, touched: false };
+
+  window.addEventListener('pointermove', (e) => {
+    view.touched = true;
+    view.tx = (e.clientX / window.innerWidth) * 2 - 1;
+    view.ty = (e.clientY / window.innerHeight) * 2 - 1;
+  });
+  window.addEventListener('deviceorientation', (e) => {
+    if (e.gamma == null) return;
+    view.touched = true;
+    view.tx = THREE.MathUtils.clamp(e.gamma / 30, -1, 1);
+    view.ty = THREE.MathUtils.clamp((e.beta - 45) / 30, -1, 1);
+  });
+
+  // En iPhone los sensores piden permiso, y solo se puede pedir tras un toque.
+  let askedMotion = false;
+  renderer.domElement.addEventListener('click', async () => {
+    fx.burst();
+    if (askedMotion || typeof window.DeviceOrientationEvent?.requestPermission !== 'function') return;
+    askedMotion = true;
+    try { await DeviceOrientationEvent.requestPermission(); } catch { /* sin permiso: se usa el dedo */ }
+  });
+
+  view.update = (t, dt) => {
+    if (!view.touched) {
+      view.tx = Math.sin(t * 0.5);
+      view.ty = Math.sin(t * 0.37) * 0.5;
+    }
+    const k = Math.min(1, dt * 4);
+    view.x += (view.tx - view.x) * k;
+    view.y += (view.ty - view.y) * k;
+  };
+  return view;
+}
+
+function placeDemoCamera(camera, view, mode) {
+  const fit = Math.max(1.3, 0.95 / camera.aspect); // aleja la cámara en pantallas angostas
+  if (mode === 'mesa') {
+    camera.up.set(0, 0, 1);
+    camera.position.set(view.x * 0.9 * fit, (-2.0 + view.y * 0.25) * fit, (1.25 - view.y * 0.35) * fit);
+    camera.lookAt(0, 0.05, 0.62);
+  } else {
+    camera.up.set(0, 1, 0);
+    camera.position.set(view.x * 1.1, 0.3 - view.y * 0.7, 2.5 * fit);
+    camera.lookAt(0, 0.35, 0.15);
+  }
+}
+
+// ---------- Utilidades ----------
 function setupRenderer(renderer) {
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio)); // rendimiento en celulares
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio)); // limita el costo en celulares
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.15;
@@ -203,10 +359,11 @@ function setupRenderer(renderer) {
 function fail(msg) {
   show(ui.loading, false);
   show(ui.start, false);
+  show(ui.hint, false);
   ui.errorMsg.textContent = msg;
   show(ui.error, true);
 }
 
 function vibrate() {
-  try { navigator.vibrate?.(30); } catch (_) { /* no disponible */ }
+  try { navigator.vibrate?.(30); } catch { /* no disponible */ }
 }
