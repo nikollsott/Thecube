@@ -1,8 +1,10 @@
 import * as THREE from 'three';
-import { createEffects } from './effects.js?v=16'; // ?v= evita que el celular use una versión vieja
+import { createEffects } from './effects.js?v=17'; // ?v= evita que el celular use una versión vieja
 
 // ---------- Configuración ----------
+// Dos marcadores del mismo logo: 0 = sobre fondo claro, 1 = sobre fondo oscuro.
 const TARGET_SRC = './targets/targets.mind';
+const TARGET_COUNT = 2;
 
 // Ubicación del logo dentro de la imagen del marcador (en píxeles).
 const IMG_W = 1580;
@@ -66,7 +68,7 @@ async function startAR() {
 
   const { renderer, scene, camera } = mindar;
   setupRenderer(renderer);
-  const anchor = mindar.addAnchor(0);
+  const anchors = Array.from({ length: TARGET_COUNT }, (_, i) => mindar.addAnchor(i));
 
   // La escena sigue al logo con suavizado (no va dentro del anchor).
   const content = new THREE.Group();
@@ -75,22 +77,26 @@ async function startAR() {
   content.add(fx.group);
 
   const state = {
-    tracked: false, everSeen: false, snap: true, lastSeen: -Infinity,
+    anchor: anchors[0], tracked: false, everSeen: false, snap: true, lastSeen: -Infinity,
     fade: 0, fit: 1, mode: FORCED_MODE || 'pared', modeSamples: 0, modeSum: 0,
   };
 
-  anchor.onTargetFound = () => {
-    if (!state.everSeen || performance.now() - state.lastSeen > REINTRO_MS) {
-      Object.assign(state, { snap: true, modeSamples: 0, modeSum: 0 });
-      fx.burst();
-      vibrate();
-    }
-    state.tracked = state.everSeen = true;
-  };
-  anchor.onTargetLost = () => {
-    state.tracked = false;
-    state.lastSeen = performance.now();
-  };
+  for (const anchor of anchors) {
+    anchor.onTargetFound = () => {
+      if (!state.everSeen || performance.now() - state.lastSeen > REINTRO_MS) {
+        Object.assign(state, { snap: true, modeSamples: 0, modeSum: 0 });
+        fx.burst();
+        vibrate();
+      }
+      state.anchor = anchor;
+      state.tracked = state.everSeen = true;
+    };
+    anchor.onTargetLost = () => {
+      if (state.anchor !== anchor) return;
+      state.tracked = false;
+      state.lastSeen = performance.now();
+    };
+  }
 
   const slowTimer = setTimeout(() => explainSlowStart(mindar), SLOW_START_MS);
   try {
@@ -119,9 +125,9 @@ async function startAR() {
     prev = now;
 
     if (state.tracked) {
-      followAnchor(content, anchor, pose, state, dt);
+      followAnchor(content, state.anchor, pose, state, dt);
       state.lastSeen = now;
-      detectMode(anchor, state, fx);
+      detectMode(state.anchor, state, fx);
       state.fit = fitToScreen(content, camera, fx, state.fit, dt);
       fx.setFit(state.fit);
     }
