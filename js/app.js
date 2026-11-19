@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { createEffects } from './effects.js?v=20'; // ?v= evita que el celular use una versión vieja
+import { createEffects } from './effects.js?v=21'; // ?v= evita que el celular use una versión vieja
+import { createCapture, shareFile, downloadFile } from './capture.js?v=21';
 
 // ---------- Configuración ----------
 // Marcadores del mismo logo (ver targets/fuentes): 0 fondo claro, 1 fondo oscuro,
@@ -40,6 +41,9 @@ const ui = {
   loading: $('loading'), loadingMsg: $('loading-msg'), loadingRetry: $('loading-retry'),
   hint: $('hint'), error: $('error'), errorMsg: $('error-msg'),
   debug: $('debug'), container: $('ar'),
+  capture: $('capture'), shutter: $('shutter'), recTime: $('rec-time'), flash: $('flash'),
+  preview: $('preview'), previewImg: $('preview-img'), previewVideo: $('preview-video'),
+  shareBtn: $('share-btn'), saveBtn: $('save-btn'), closePreview: $('close-preview'),
 };
 const show = (el, on = true) => el.classList.toggle('hidden', !on);
 const setLoadingMsg = (text) => { ui.loadingMsg.textContent = text; };
@@ -115,6 +119,7 @@ async function startAR() {
   show(ui.loading, false);
   show(ui.hint, true);
   resumeCameraOnReturn(mindar);
+  const capture = setupCapture(renderer, () => mindar.video);
 
   const pose = { p: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3() };
   const fps = createFpsMeter();
@@ -141,6 +146,7 @@ async function startAR() {
     fx.update(now / 1000, dt);
     show(ui.hint, !state.tracked && state.fade < 0.05);
     renderer.render(scene, camera);
+    capture.afterRender();
 
     if (DEBUG) {
       const status = state.tracked ? 'DETECTADO' : holding ? 'memoria' : 'buscando';
@@ -266,6 +272,7 @@ async function startDemo() {
 
   fitRendererToWindow(renderer, camera);
   const viewer = trackViewer(renderer, fx);
+  const capture = setupCapture(renderer, null);
   let prev = performance.now();
 
   renderer.setAnimationLoop(() => {
@@ -278,7 +285,86 @@ async function startDemo() {
     placeDemoCamera(camera, viewer, mode);
     fx.update(t, dt);
     renderer.render(scene, camera);
+    capture.afterRender();
   });
+}
+
+// ---------- Foto y video ----------
+function setupCapture(renderer, getVideo) {
+  const capture = createCapture({ container: ui.container, renderer, getVideo });
+  const modeButtons = [...ui.capture.querySelectorAll('[data-mode]')];
+  let mode = 'photo';
+  let current = null; // { blob, name, url }
+
+  if (!capture.canRecord()) modeButtons.find((b) => b.dataset.mode === 'video').disabled = true;
+
+  const setMode = (m) => {
+    mode = m;
+    modeButtons.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
+    ui.shutter.classList.toggle('video', m === 'video');
+    ui.shutter.setAttribute('aria-label', m === 'video' ? 'Grabar video' : 'Tomar foto');
+  };
+  modeButtons.forEach((b) => b.addEventListener('click', () => { if (!capture.isRecording()) setMode(b.dataset.mode); }));
+
+  const openPreview = (blob, kind, ext) => {
+    current = { blob, name: `thecube-${Date.now()}.${ext}`, url: URL.createObjectURL(blob) };
+    show(ui.previewImg, kind === 'photo');
+    show(ui.previewVideo, kind === 'video');
+    if (kind === 'photo') ui.previewImg.src = current.url;
+    else { ui.previewVideo.src = current.url; ui.previewVideo.play().catch(() => {}); }
+    show(ui.capture, false);
+    show(ui.preview, true);
+  };
+  const closePreview = () => {
+    ui.previewVideo.pause();
+    ui.previewVideo.removeAttribute('src');
+    URL.revokeObjectURL(current?.url);
+    current = null;
+    show(ui.preview, false);
+    show(ui.capture, true);
+  };
+
+  // Contador y anillo de progreso mientras se graba.
+  const tickRecording = () => {
+    if (!capture.isRecording()) return;
+    ui.shutter.style.setProperty('--p', capture.progress().toFixed(3));
+    const s = Math.floor(capture.progress() * 15);
+    ui.recTime.textContent = `0:${String(s).padStart(2, '0')}`;
+    requestAnimationFrame(tickRecording);
+  };
+  const stopRecordingUI = () => {
+    ui.shutter.classList.remove('recording');
+    ui.shutter.style.setProperty('--p', 0);
+    show(ui.recTime, false);
+    setMode(mode);
+  };
+
+  ui.shutter.addEventListener('click', async () => {
+    if (mode === 'photo') {
+      ui.flash.classList.remove('on');
+      void ui.flash.offsetWidth; // reinicia la animación del destello
+      ui.flash.classList.add('on');
+      setTimeout(() => ui.flash.classList.remove('on'), 400);
+      const blob = await capture.photo();
+      if (blob) openPreview(blob, 'photo', 'jpg');
+      return;
+    }
+    if (capture.isRecording()) return capture.stopVideo();
+    const started = capture.startVideo((blob, ext) => { stopRecordingUI(); openPreview(blob, 'video', ext); });
+    if (!started) return;
+    ui.shutter.classList.add('recording');
+    ui.shutter.setAttribute('aria-label', 'Detener video');
+    show(ui.recTime, true);
+    tickRecording();
+  });
+
+  ui.shareBtn.addEventListener('click', () => current && shareFile(current.blob, current.name));
+  ui.saveBtn.addEventListener('click', () => current && downloadFile(current.blob, current.name));
+  ui.closePreview.addEventListener('click', closePreview);
+
+  setMode('photo');
+  show(ui.capture, true);
+  return capture;
 }
 
 function createPrintedLogo(withPaper) {
@@ -367,6 +453,7 @@ function fail(msg) {
   show(ui.loading, false);
   show(ui.start, false);
   show(ui.hint, false);
+  show(ui.capture, false);
   ui.errorMsg.textContent = msg;
   show(ui.error, true);
 }

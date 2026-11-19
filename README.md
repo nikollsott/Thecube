@@ -13,6 +13,7 @@ animados a distintas profundidades (efecto paralaje).
 | `index.html` | Pantalla de inicio, carga, guía para apuntar y errores |
 | `js/app.js` | Cámara + MindAR, seguimiento suavizado, modo mesa/pared, ajuste a pantalla, demo |
 | `js/effects.js` | La escena: imágenes en capas y efectos animados |
+| `js/capture.js` | Foto y video (cámara + escena + logo de marca de agua) para compartir o guardar |
 | `assets/escena/` | Imágenes de la escena (PNG con fondo transparente) |
 | `assets/logo.png` | Logo con fondo transparente |
 | `targets/targets.mind` | 5 marcadores: fondo claro, fondo oscuro, foto de la pared y 2 fotos con otra luz |
@@ -27,6 +28,14 @@ animados a distintas profundidades (efecto paralaje).
 - `?modo=mesa` / `?modo=pared` — fuerza el modo (si no, se detecta solo).
   - **Mesa**: logo impreso sobre una mesa → la escena se pone de pie sobre él.
   - **Pared**: logo de frente (afiche, pared, camiseta) → la escena sale de frente.
+
+## Foto y video
+
+Durante la experiencia, abajo hay un selector **Foto | Video** y un botón para capturar.
+La captura junta la imagen de la cámara, la escena y el logo como marca de agua (sin botones
+ni textos). El video dura hasta 15 s y se graba en MP4 cuando el celular lo permite.
+Después se puede **Compartir** (menú del celular: WhatsApp, Instagram, etc.) o **Guardar**.
+Todo se procesa en el celular; no se sube a ningún servidor.
 
 ## Probar en local
 
