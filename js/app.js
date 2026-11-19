@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { createEffects } from './effects.js?v=18'; // ?v= evita que el celular use una versión vieja
+import { createEffects } from './effects.js?v=19'; // ?v= evita que el celular use una versión vieja
 
 // ---------- Configuración ----------
-// Dos marcadores del mismo logo: 0 = sobre fondo claro, 1 = sobre fondo oscuro.
-const TARGET_SRC = './targets/targets.mind?v=2'; // subir ?v= al cambiar los marcadores
-const TARGET_COUNT = 2;
+// Marcadores del mismo logo (ver targets/fuentes): 0 fondo claro, 1 fondo oscuro, 2-5 fotos del logo real.
+const TARGET_SRC = './targets/targets.mind?v=3'; // subir ?v= al cambiar los marcadores
+const TARGET_COUNT = 6;
 
 // Ubicación del logo dentro de la imagen del marcador (en píxeles).
 const IMG_W = 1580;

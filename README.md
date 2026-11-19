@@ -15,7 +15,8 @@ animados a distintas profundidades (efecto paralaje).
 | `js/effects.js` | La escena: imágenes en capas y efectos animados |
 | `assets/escena/` | Imágenes de la escena (PNG con fondo transparente) |
 | `assets/logo.png` | Logo con fondo transparente |
-| `targets/targets.mind` | Marcadores del logo (1580×1600): 0 sobre fondo claro, 1 sobre fondo oscuro |
+| `targets/targets.mind` | 6 marcadores del logo: fondo claro, fondo oscuro y 4 fotos del logo real |
+| `targets/fuentes/` | Imágenes con las que se compilaron los marcadores |
 | `vendor/` | three.js 0.160.0 y MindAR 1.2.5 (copias locales, sin CDN) |
 | `tools/servidor.py` | Servidor local de pruebas |
 
@@ -56,6 +57,10 @@ movimiento y tolera parpadeos breves. Funciona mejor con el logo grande, bien il
 reflejos.
 
 MindAR reconoce en escala de grises: el logo rojo se ve **oscuro sobre fondo claro** y **claro
-sobre fondo oscuro**, y para el algoritmo son imágenes distintas. Por eso `targets.mind` trae
-los dos marcadores. Si el logo se imprime sobre otro fondo muy distinto, hay que agregar un
-marcador para ese fondo.
+sobre fondo oscuro**, y para el algoritmo son imágenes distintas. Además, el logo físico brilla,
+refleja la luz y está sobre una superficie con textura. Por eso `targets.mind` trae varios
+marcadores: los dos dibujados y 4 fotos del logo real (de videos de prueba con celular).
+
+Para agregar otro marcador (por ejemplo, el logo en otro lugar): tomar una foto de frente, recortarla
+para que el logo quede en la misma posición que en `targets/fuentes/foto-a.jpg`, compilarla con
+MindAR y sumarla a `targets.mind`; luego actualizar `TARGET_COUNT` y el `?v=` en `js/app.js`.
