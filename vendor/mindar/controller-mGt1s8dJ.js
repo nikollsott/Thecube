@@ -53835,7 +53835,8 @@ class vC {
 class V4 {
   constructor(t, e, s = !1) {
     this.debugMode = s, this.width = t, this.height = e;
-    let o = Math.min(t, e) / 2, r = Math.pow(2, Math.round(Math.log(o) / Math.log(2)));
+    // PARCHE Thecube: el área de búsqueda cubre casi todo el ancho (original: un cuadro de 256 px).
+    let o = Math.min(t, e), r = Math.min(512, Math.floor((o - 2) / 16) * 16);
     this.cropSize = r, this.detector = new vC(r, r, s), this.kernelCaches = {}, this.lastRandomIndex = 4;
   }
   detect(t) {

@@ -15,9 +15,9 @@ animados a distintas profundidades (efecto paralaje).
 | `js/effects.js` | La escena: imágenes en capas y efectos animados |
 | `assets/escena/` | Imágenes de la escena (PNG con fondo transparente) |
 | `assets/logo.png` | Logo con fondo transparente |
-| `targets/targets.mind` | 6 marcadores del logo: fondo claro, fondo oscuro y 4 fotos del logo real |
+| `targets/targets.mind` | 5 marcadores: fondo claro, fondo oscuro, foto de la pared y 2 fotos con otra luz |
 | `targets/fuentes/` | Imágenes con las que se compilaron los marcadores |
-| `vendor/` | three.js 0.160.0 y MindAR 1.2.5 (copias locales, sin CDN) |
+| `vendor/` | three.js 0.160.0 y MindAR 1.2.5 (copias locales, sin CDN; MindAR con un ajuste, ver abajo) |
 | `tools/servidor.py` | Servidor local de pruebas |
 
 ## Modos
@@ -53,14 +53,18 @@ y escucha únicamente en este computador.
 ## Sobre el marcador
 
 El logo es limpio y de un solo color, con pocos puntos de detalle. Por eso la app suaviza el
-movimiento y tolera parpadeos breves. Funciona mejor con el logo grande, bien iluminado y sin
-reflejos.
+movimiento y tolera parpadeos breves.
 
 MindAR reconoce en escala de grises: el logo rojo se ve **oscuro sobre fondo claro** y **claro
-sobre fondo oscuro**, y para el algoritmo son imágenes distintas. Además, el logo físico brilla,
-refleja la luz y está sobre una superficie con textura. Por eso `targets.mind` trae varios
-marcadores: los dos dibujados y 4 fotos del logo real (de videos de prueba con celular).
+sobre fondo oscuro**, y para el algoritmo son imágenes distintas. Además, el logo de la pared
+brilla, refleja la luz y está sobre tela. Por eso `targets.mind` trae los dos marcadores dibujados
+y fotos reales de la pared (`targets/fuentes/`).
+
+**Ajuste en MindAR** (`vendor/mindar/controller-*.js`, marcado con `PARCHE Thecube`): MindAR original
+solo busca el logo en un cuadro de 256 px de la imagen de la cámara; si el logo es más grande que eso
+(celular cerca), nunca lo detecta. El ajuste amplía ese cuadro a casi todo el ancho (máx. 512 px).
+Al actualizar MindAR hay que volver a aplicarlo.
 
 Para agregar otro marcador (por ejemplo, el logo en otro lugar): tomar una foto de frente, recortarla
-para que el logo quede en la misma posición que en `targets/fuentes/foto-a.jpg`, compilarla con
+para que el logo quede en la misma posición que en `targets/fuentes/pared.jpg`, compilarla con
 MindAR y sumarla a `targets.mind`; luego actualizar `TARGET_COUNT` y el `?v=` en `js/app.js`.

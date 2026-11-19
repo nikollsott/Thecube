@@ -1,10 +1,11 @@
 import * as THREE from 'three';
-import { createEffects } from './effects.js?v=19'; // ?v= evita que el celular use una versión vieja
+import { createEffects } from './effects.js?v=20'; // ?v= evita que el celular use una versión vieja
 
 // ---------- Configuración ----------
-// Marcadores del mismo logo (ver targets/fuentes): 0 fondo claro, 1 fondo oscuro, 2-5 fotos del logo real.
-const TARGET_SRC = './targets/targets.mind?v=3'; // subir ?v= al cambiar los marcadores
-const TARGET_COUNT = 6;
+// Marcadores del mismo logo (ver targets/fuentes): 0 fondo claro, 1 fondo oscuro,
+// 2 foto de la pared, 3-4 fotos de la pared con otra luz.
+const TARGET_SRC = './targets/targets.mind?v=4'; // subir ?v= al cambiar los marcadores
+const TARGET_COUNT = 5;
 
 // Ubicación del logo dentro de la imagen del marcador (en píxeles).
 const IMG_W = 1580;

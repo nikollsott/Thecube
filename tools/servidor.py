@@ -22,6 +22,7 @@ PERMITIDAS = [re.compile(p + r"\Z") for p in (
     r"/assets/logo\.png",
     r"/assets/escena/[\w.-]+\.png",
     r"/targets/[\w.-]+\.mind",
+    r"/targets/fuentes/[\w.-]+\.(jpg|png)",
     r"/vendor/[\w./-]+\.js",
 )]
 
