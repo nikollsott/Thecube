@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { createEffects } from './effects.js?v=24'; // ?v= evita que el celular use una versión vieja
-import { createCapture, shareFile, downloadFile } from './capture.js?v=24';
+import { createEffects } from './effects.js?v=25'; // ?v= evita que el celular use una versión vieja
+import { createCapture, shareFile, downloadFile } from './capture.js?v=25';
 
 // ---------- Configuración ----------
 // Marcadores del mismo logo (ver targets/fuentes): 0 fondo claro, 1 fondo oscuro,
@@ -111,7 +111,7 @@ async function startAR() {
     console.warn('Cámara no disponible', e);
     clearTimeout(slowTimer);
     mindar.video = null; // evita un error interno de MindAR al girar la pantalla
-    return fail('No pudimos acceder a la cámara. Da permiso a la cámara en tu navegador y vuelve a intentarlo.');
+    return fail('Para continuar debes permitir la cámara y el micrófono. Si ya los rechazaste, actívalos en los ajustes del navegador para este sitio y toca "Intentar de nuevo".');
   }
 
   await fx.ready; // nunca mostrar la escena a medio cargar
@@ -175,7 +175,7 @@ async function loadMindAR() {
 
 // Un solo aviso de permisos: cuando MindAR pide la cámara, se pide también el micrófono.
 // El micrófono se apaga enseguida (queda el permiso) y solo se enciende al grabar video.
-// Si no dan el micrófono, sigue solo con la cámara.
+// Hay que aceptar ambos para continuar; solo si el equipo no tiene micrófono, sigue con la cámara.
 function askCameraAndMicrophoneOnce() {
   const media = navigator.mediaDevices;
   const original = media.getUserMedia.bind(media);
@@ -185,7 +185,8 @@ function askCameraAndMicrophoneOnce() {
       const stream = await original({ ...constraints, audio: true });
       stream.getAudioTracks().forEach((t) => t.stop());
       return new MediaStream(stream.getVideoTracks());
-    } catch {
+    } catch (e) {
+      if (e?.name === 'NotAllowedError' || e?.name === 'SecurityError') throw e; // rechazó el permiso
       return original(constraints);
     }
   };
