@@ -33,7 +33,9 @@ animados a distintas profundidades (efecto paralaje).
 
 Durante la experiencia, abajo hay un selector **Foto | Video** y un botón para capturar.
 La captura junta la imagen de la cámara, la escena y el logo como marca de agua (sin botones
-ni textos). El video dura hasta 15 s y se graba en MP4 cuando el celular lo permite.
+ni textos). El video dura hasta 15 s y se graba en MP4 cuando el celular lo permite, con el
+sonido del micrófono si la persona da permiso (si no, sale sin sonido). El micrófono solo se
+enciende mientras se graba.
 Después se puede **Compartir** (menú del celular: WhatsApp, Instagram, etc.) o **Guardar**.
 Todo se procesa en el celular; no se sube a ningún servidor.
 

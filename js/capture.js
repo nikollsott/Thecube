@@ -1,7 +1,14 @@
 // Foto y video de lo que se ve en pantalla (cámara + escena) para guardar o compartir.
 // Todo se procesa en el celular; nada se envía a ningún servidor.
 const MAX_VIDEO_MS = 15000;
-const VIDEO_TYPES = [
+// Formatos en orden de preferencia (MP4 primero: es el que acepta el iPhone).
+const TYPES_WITH_AUDIO = [
+  ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'mp4'],
+  ['video/mp4', 'mp4'],
+  ['video/webm;codecs=vp9,opus', 'webm'],
+  ['video/webm', 'webm'],
+];
+const TYPES_SILENT = [
   ['video/mp4;codecs=avc1.42E01E', 'mp4'],
   ['video/mp4', 'mp4'],
   ['video/webm;codecs=vp9', 'webm'],
@@ -16,9 +23,22 @@ export function createCapture({ container, renderer, getVideo, logoUrl = './asse
 
   let pendingPhoto = null;
   let recording = null;
+  let starting = false;
   let scale = 1;
 
-  const videoType = () => (window.MediaRecorder && VIDEO_TYPES.find(([t]) => MediaRecorder.isTypeSupported(t))) || null;
+  const videoType = (withAudio) => (window.MediaRecorder
+    && (withAudio ? TYPES_WITH_AUDIO : TYPES_SILENT).find(([t]) => MediaRecorder.isTypeSupported(t))) || null;
+
+  // Micrófono solo mientras se graba. Si no hay permiso, el video sale sin sonido.
+  async function openMicrophone() {
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true }, video: false,
+      });
+    } catch {
+      return null;
+    }
+  }
 
   function resize(newScale) {
     scale = newScale;
@@ -52,8 +72,8 @@ export function createCapture({ container, renderer, getVideo, logoUrl = './asse
   }
 
   return {
-    canRecord: () => !!videoType(),
-    isRecording: () => !!recording,
+    canRecord: () => !!videoType(false),
+    isRecording: () => !!recording || starting,
     progress: () => (recording ? Math.min(1, (performance.now() - recording.start) / MAX_VIDEO_MS) : 0),
 
     // Pide una foto; se toma justo después del siguiente cuadro dibujado.
@@ -62,17 +82,30 @@ export function createCapture({ container, renderer, getVideo, logoUrl = './asse
       return new Promise((resolve) => { pendingPhoto = resolve; });
     },
 
-    startVideo(onDone) {
-      const type = videoType();
-      if (!type || recording) return false;
+    async startVideo(onDone) {
+      if (recording || starting) return false;
+      starting = true;
+      const mic = await openMicrophone();
+      starting = false;
+
+      const type = videoType(!!mic) || videoType(false);
+      if (!type) {
+        mic?.getTracks().forEach((t) => t.stop());
+        return false;
+      }
       resize(Math.min(1.5, 1280 / Math.max(container.clientWidth, container.clientHeight)));
       compose();
-      const recorder = new MediaRecorder(out.captureStream(30), { mimeType: type[0], videoBitsPerSecond: 6e6 });
+
+      const tracks = [...out.captureStream(30).getVideoTracks(), ...(mic ? mic.getAudioTracks() : [])];
+      const recorder = new MediaRecorder(new MediaStream(tracks), {
+        mimeType: type[0], videoBitsPerSecond: 6e6, audioBitsPerSecond: 128000,
+      });
       const chunks = [];
       recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
       recorder.onstop = () => {
         clearTimeout(recording.timer);
         recording = null;
+        mic?.getTracks().forEach((t) => t.stop()); // apaga el micrófono
         onDone(new Blob(chunks, { type: type[0].split(';')[0] }), type[1]);
       };
       recorder.start(250);

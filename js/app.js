@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { createEffects } from './effects.js?v=21'; // ?v= evita que el celular use una versión vieja
-import { createCapture, shareFile, downloadFile } from './capture.js?v=21';
+import { createEffects } from './effects.js?v=24'; // ?v= evita que el celular use una versión vieja
+import { createCapture, shareFile, downloadFile } from './capture.js?v=24';
 
 // ---------- Configuración ----------
 // Marcadores del mismo logo (ver targets/fuentes): 0 fondo claro, 1 fondo oscuro,
@@ -103,6 +103,7 @@ async function startAR() {
     };
   }
 
+  askCameraAndMicrophoneOnce();
   const slowTimer = setTimeout(() => explainSlowStart(mindar), SLOW_START_MS);
   try {
     await mindar.start();
@@ -170,6 +171,24 @@ async function loadMindAR() {
     console.error(e);
     return null;
   }
+}
+
+// Un solo aviso de permisos: cuando MindAR pide la cámara, se pide también el micrófono.
+// El micrófono se apaga enseguida (queda el permiso) y solo se enciende al grabar video.
+// Si no dan el micrófono, sigue solo con la cámara.
+function askCameraAndMicrophoneOnce() {
+  const media = navigator.mediaDevices;
+  const original = media.getUserMedia.bind(media);
+  media.getUserMedia = async (constraints) => {
+    media.getUserMedia = original; // solo la primera llamada (la de MindAR)
+    try {
+      const stream = await original({ ...constraints, audio: true });
+      stream.getAudioTracks().forEach((t) => t.stop());
+      return new MediaStream(stream.getVideoTracks());
+    } catch {
+      return original(constraints);
+    }
+  };
 }
 
 function explainSlowStart(mindar) {
@@ -311,7 +330,12 @@ function setupCapture(renderer, getVideo) {
     show(ui.previewImg, kind === 'photo');
     show(ui.previewVideo, kind === 'video');
     if (kind === 'photo') ui.previewImg.src = current.url;
-    else { ui.previewVideo.src = current.url; ui.previewVideo.play().catch(() => {}); }
+    else {
+      // Con sonido si el navegador lo permite; si no, en silencio (se activa en los controles).
+      ui.previewVideo.src = current.url;
+      ui.previewVideo.muted = false;
+      ui.previewVideo.play().catch(() => { ui.previewVideo.muted = true; ui.previewVideo.play().catch(() => {}); });
+    }
     show(ui.capture, false);
     show(ui.preview, true);
   };
@@ -350,7 +374,7 @@ function setupCapture(renderer, getVideo) {
       return;
     }
     if (capture.isRecording()) return capture.stopVideo();
-    const started = capture.startVideo((blob, ext) => { stopRecordingUI(); openPreview(blob, 'video', ext); });
+    const started = await capture.startVideo((blob, ext) => { stopRecordingUI(); openPreview(blob, 'video', ext); });
     if (!started) return;
     ui.shutter.classList.add('recording');
     ui.shutter.setAttribute('aria-label', 'Detener video');
